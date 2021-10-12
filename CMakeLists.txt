@@ -9,12 +9,14 @@
 #
 # SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #
-cmake_minimum_required(VERSION 3.7)
-project(CycloneDDS VERSION 0.7.0 LANGUAGES C)
-if(CMAKE_VERSION VERSION_LESS 3.12)
-  # GENERATE_EXPORT_HEADER requires a C++ compiler up to version 3.12
-  enable_language(CXX)
-endif()
+
+cmake_minimum_required(VERSION 3.15)
+
+project(CycloneDDS VERSION 0.9.0
+        DESCRIPTION "Cyclon DDS middleware"
+        LANGUAGES C)
+
+cmake_policy(SET CMP0076 NEW)
 
 # Set a default build type if none was specified
 set(default_build_type "RelWithDebInfo")
@@ -27,36 +29,25 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
+if (${CMAKE_C_COMPILER} MATCHES ".*-.*-.*")
+  set(CMAKE_CROSSCOMPILING ON)
+endif()
+
+if(CMAKE_CROSSCOMPILING)
+  set(not_crosscompiling OFF)
+else()
+  set(not_crosscompiling ON)
+endif()
+
 # By default don't treat warnings as errors, else anyone building it with a different compiler that
 # just happens to generate a warning, as well as anyone adding or modifying something and making a
 # small mistake would run into errors.  CI builds can be configured differently.
 option(WERROR "Treat compiler warnings as errors" OFF)
 
-FUNCTION(PREPEND var prefix)
-   SET(listVar "")
-   FOREACH(f ${ARGN})
-      LIST(APPEND listVar "${prefix}/${f}")
-   ENDFOREACH(f)
-   SET(${var} "${listVar}" PARENT_SCOPE)
-ENDFUNCTION(PREPEND)
-
-# Set module path before defining project so platform files will work.
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/Modules")
-set(PROJECT_NAME_FULL "Eclipse Cyclone DDS")
 
-# Set some convenience variants of the project-name
-string(REPLACE " " "-" PROJECT_NAME_DASHED "${PROJECT_NAME_FULL}")
-string(TOUPPER ${PROJECT_NAME} PROJECT_NAME_CAPS)
-string(TOLOWER ${PROJECT_NAME} PROJECT_NAME_SMALL)
-
-# By default the Java-based components get built, but make it possible to disable that: if only the
-# core library is required, there's no need to build them, and that in turn eliminates the Maven and
-# JDK dependency.
-option(BUILD_IDLC "Build IDL preprocessor" ON)
-if(BUILD_IDLC STREQUAL "AUTO")
-  find_package(Maven 3.0 QUIET)
-  set(BUILD_IDLC ${Maven_FOUND})
-endif()
+option(BUILD_IDLC "Build IDL preprocessor" ${not_crosscompiling})
+option(BUILD_DDSCONF "Build DDSCONF buildtool" ${not_crosscompiling})
 
 set(CMAKE_C_STANDARD 99)
 if(CMAKE_SYSTEM_NAME STREQUAL "VxWorks")
@@ -69,6 +60,26 @@ if(${CMAKE_C_COMPILER_ID} STREQUAL "SunPro")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m64")
   set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -m64")
+endif()
+
+# Homebrew
+if(APPLE)
+  # Hint Homebrew prefixes to find_* commands. Use of CMAKE_PREFIX_PATH is
+  # required because full signature mode for find_package implies Config mode.
+  find_program(brew NAMES brew)
+  if (brew)
+    foreach(formula bison)
+      execute_process(
+        COMMAND ${brew} --prefix ${formula}
+        OUTPUT_VARIABLE prefix
+        ERROR_QUIET)
+      string(STRIP "${prefix}" prefix)
+      if(EXISTS "${prefix}")
+        # Append to ensure user specified paths come first.
+        set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH};${prefix}")
+      endif()
+    endforeach()
+  endif()
 endif()
 
 # Conan
@@ -180,12 +191,43 @@ if(CMAKE_VERSION VERSION_LESS 3.13)
   endmacro()
 endif()
 
-# Make it easy to enable Clang's/gcc's analyzers
-set(USE_SANITIZER "" CACHE STRING "Sanitizers to enable on the build.")
-if(USE_SANITIZER)
-  string(REGEX REPLACE " " "" USE_SANITIZER "${USE_SANITIZER}")
-  string(REGEX REPLACE "[,;]+" ";" USE_SANITIZER "${USE_SANITIZER}")
-  foreach(san ${USE_SANITIZER})
+# Make it easy to enable MSVC, Clang's/gcc's analyzers
+set(ANALYZER "" CACHE STRING "Analyzer to enable on the build.")
+if(ANALYZER)
+  # GCC and Visual Studio offer builtin analyzers. Clang supports static
+  # analysis through separate tools, e.g. Clang-Tidy, which can be used in
+  # conjunction with other compilers too. Specifying -DANALYZER=on enables
+  # the builtin analyzer for the compiler, enabling clang-tidy in case of
+  # Clang. Specifying -DANALYZER=clang-tidy always enables clang-tidy.
+  string(REPLACE " " "" ANALYZER "${ANALYZER}")
+  string(TOLOWER "${ANALYZER}" ANALYZER)
+  if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND ANALYZER STREQUAL "on")
+    set(ANALYZER "clang-tidy")
+  endif()
+
+  if(ANALYZER STREQUAL "clang-tidy")
+    # Clang-Tidy is an extensible tool that offers more than static analysis.
+    # https://clang.llvm.org/extra/clang-tidy/checks/list.html
+    message(STATUS "Enabling analyzer: clang-tidy")
+    set(CMAKE_C_CLANG_TIDY "clang-tidy;-checks=-*,clang-analyzer-*,-clang-analyzer-security.insecureAPI.strcpy")
+    if(WERROR)
+      set(CMAKE_C_CLANG_TIDY "${CMAKE_C_CLANG_TIDY};--warnings-as-errors=*")
+    endif()
+  elseif(ANALYZER STREQUAL "on")
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+      if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "10")
+        message(STATUS "Enabling analyzer: GCC")
+        # -Wanalyzer-malloc-leak generates lots of false positives
+        add_compile_options(-fanalyzer -Wno-analyzer-malloc-leak)
+      endif()
+    endif()
+  endif()
+endif()
+set(SANITIZER "" CACHE STRING "Sanitizers to enable on the build.")
+if(SANITIZER)
+  string(REGEX REPLACE " " "" SANITIZER "${SANITIZER}")
+  string(REGEX REPLACE "[,;]+" ";" SANITIZER "${SANITIZER}")
+  foreach(san ${SANITIZER})
     if(san STREQUAL "address")
       add_compile_options("-fno-omit-frame-pointer")
       add_link_options("-fno-omit-frame-pointer")
@@ -198,41 +240,28 @@ if(USE_SANITIZER)
   endforeach()
 endif()
 
-
-include(GNUInstallDirs)
-include(AnalyzeBuild)
-if(APPLE)
-  set(CMAKE_INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
-else()
-  set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
-endif()
 set(MEMORYCHECK_COMMAND_OPTIONS "--track-origins=yes --leak-check=full --trace-children=yes --child-silent-after-fork=yes --xml=yes --xml-file=TestResultValgrind_%p.xml --tool=memcheck --show-reachable=yes --leak-resolution=high")
 
 # By default building the testing tree is enabled by including CTest, but
 # since not everybody has CUnit, and because it is not strictly required to
 # build the product itself, switch to off by default.
 option(BUILD_TESTING "Build the testing tree." OFF)
-include(CTest)
+
+# Disable building examples by default because it is not strictly required.
+option(BUILD_EXAMPLES "Build examples." OFF)
 
 option(BUILD_DOCS "Build documentation." OFF)
-if(CMAKE_CROSSCOMPILING)
-  set(not_crosscompiling OFF)
-else()
-  set(not_crosscompiling ON)
-endif()
 option(BUILD_SCHEMA "Build generated schema for configuration options." ${not_crosscompiling})
+
 # Build all executables and libraries into the top-level /bin and /lib folders.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
 add_subdirectory(src)
-if(BUILD_IDLC)
+
+if(BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
-
 add_subdirectory(docs)
-
-# Pull-in CPack and support for generating <Package>Config.cmake and packages.
-include(Packaging)

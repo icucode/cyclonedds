@@ -10,19 +10,15 @@
 # SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #
 
-
 add_library(security_api INTERFACE)
 
-target_include_directories(
-  security_api INTERFACE
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../../core/ddsi/include>"
-)
+target_sources(security_api
+  INTERFACE include/dds/security/dds_security_api.h
+            include/dds/security/dds_security_api_access_control.h
+            include/dds/security/dds_security_api_authentication.h
+            include/dds/security/dds_security_api_cryptography.h
+            include/dds/security/dds_security_api_defs.h
+            include/dds/security/dds_security_api_err.h
+            include/dds/security/dds_security_api_types.h)
 
-install(
-  DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/include/"
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-  COMPONENT dev)
-
-
+target_include_directories(security_api INTERFACE include)

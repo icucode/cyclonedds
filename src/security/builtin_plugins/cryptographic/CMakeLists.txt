@@ -9,19 +9,27 @@
 #
 # SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #
+
 include (GenerateExportHeader)
 
-PREPEND(srcs_cryptographic "${CMAKE_CURRENT_LIST_DIR}/src"
-    crypto_cipher.c
-    crypto_key_exchange
-    crypto_key_factory.c
-    crypto_objects.c
-    crypto_transform.c
-    crypto_utils.c
-    cryptography.c
-)
+add_library(dds_security_crypto)
 
-add_library(dds_security_crypto SHARED "")
+target_sources(dds_security_crypto
+  PRIVATE src/crypto_cipher.c
+          src/crypto_key_exchange.c
+          src/crypto_key_factory.c
+          src/crypto_objects.c
+          src/crypto_transform.c
+          src/crypto_utils.c
+          src/cryptography.c
+  PUBLIC  src/crypto_cipher.h
+          src/crypto_key_exchange.h
+          src/crypto_key_factory.h
+          src/crypto_objects.h
+          src/crypto_transform.h
+          src/crypto_utils.h
+          src/cryptography.h
+          ../include/crypto_tokens.h)
 
 generate_export_header(
     dds_security_crypto
@@ -29,13 +37,13 @@ generate_export_header(
         EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/include/dds/security/export.h"
 )
 
-target_link_libraries(dds_security_crypto PRIVATE security_openssl)
-target_link_libraries(dds_security_crypto PUBLIC ddsc)
-target_link_libraries(dds_security_crypto PUBLIC OpenSSL::SSL)
+target_link_libraries(dds_security_crypto
+  PRIVATE security_openssl
+  PUBLIC  ddsc OpenSSL::SSL)
+
 if(CMAKE_GENERATOR MATCHES "Visual Studio")
   set_target_properties(dds_security_crypto PROPERTIES LINK_FLAGS "/ignore:4099")
 endif()
-target_sources(dds_security_crypto PRIVATE ${srcs_cryptographic})
 
 target_include_directories(dds_security_crypto
     PUBLIC
@@ -44,13 +52,16 @@ target_include_directories(dds_security_crypto
         "$<BUILD_INTERFACE:$<TARGET_PROPERTY:security_openssl,INTERFACE_INCLUDE_DIRECTORIES>>"
         "$<BUILD_INTERFACE:$<TARGET_PROPERTY:ddsrt,INTERFACE_INCLUDE_DIRECTORIES>>"
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../include>"
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../../../core/ddsi/include>"
 )
 
-install(
-  TARGETS dds_security_crypto
-  EXPORT "${PROJECT_NAME}"
-  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib
-  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT lib
-  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT lib
-)
+if (MSVC)
+  install(FILES $<TARGET_PDB_FILE:dds_security_crypto>
+    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    COMPONENT dev
+    OPTIONAL
+  )
+endif()
+
+add_coverage(dds_security_crypto)

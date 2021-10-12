@@ -38,10 +38,12 @@ static struct {
 
 static void log_stacktrace_sigh (int sig __attribute__ ((unused)))
 {
+  /*
   int e = errno;
   log_stacktrace_stk.depth = backtrace (log_stacktrace_stk.stk, (int) (sizeof (log_stacktrace_stk.stk) / sizeof (*log_stacktrace_stk.stk)));
   ddsrt_atomic_inc32 (&log_stacktrace_flag);
   errno = e;
+  */
 }
 
 void log_stacktrace (const struct ddsrt_log_cfg *logcfg, const char *name, ddsrt_thread_t tid)
@@ -66,10 +68,12 @@ void log_stacktrace (const struct ddsrt_log_cfg *logcfg, const char *name, ddsrt
   else
   {
     DDS_CLOG (~DDS_LC_FATAL, logcfg, "-- stack trace follows --\n");
+    /*
     strs = backtrace_symbols (log_stacktrace_stk.stk, log_stacktrace_stk.depth);
     for (i = 0; i < log_stacktrace_stk.depth; i++)
       DDS_CLOG (~DDS_LC_FATAL, logcfg, "%s\n", strs[i]);
     free (strs);
+    */
     DDS_CLOG (~DDS_LC_FATAL, logcfg, "-- end of stack trace --\n");
   }
   ddsrt_atomic_st32 (&log_stacktrace_flag, 0);

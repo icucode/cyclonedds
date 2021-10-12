@@ -9,8 +9,10 @@
 #
 # SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #
+
 include(CheckCSourceCompiles)
 include(CheckLibraryExists)
+include(CheckIncludeFile)
 include(GenerateDummyExportHeader)
 
 # Lightweight IP stack can be used on non-embedded targets too, but the
@@ -70,12 +72,9 @@ else()
   string(TOLOWER ${CMAKE_SYSTEM_NAME} system_name)
 endif()
 
-# A better choice is to use a so-called object library for ddsrt, but it was
-# not possible to use target_link_libraries with object libraries until CMake
-# 3.12. At the time of this writing most long-term stable distributions still
-# ship an older version, so an interface library with public sources is used
-# as a workaround for now.
-add_library(ddsrt INTERFACE)
+add_library(ddsrt)
+
+target_link_libraries(ddsrt PUBLIC ddsc_interface)
 
 foreach(opt WITH_LWIP WITH_DNS WITH_FREERTOS)
   if(${opt})
@@ -85,62 +84,96 @@ foreach(opt WITH_LWIP WITH_DNS WITH_FREERTOS)
   endif()
 endforeach()
 
-target_include_directories(
-  ddsrt INTERFACE
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>")
-
 # Generate version header.
 configure_file("include/dds/version.h.in" "include/dds/version.h")
-target_sources(
-  ddsrt INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/include/dds/version.h")
+target_sources(ddsrt
+  INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/include/dds/version.h")
 
+# Microsoft Visual Studio does not ship a getopt.h, MinGW does.
+#check_include_file(getopt.h HAVE_GETOPT_H)
 if(WIN32)
   configure_file("include/getopt.h.in" "include/getopt.h" COPYONLY)
-  list(APPEND headers "${CMAKE_CURRENT_BINARY_DIR}/include/getopt.h")
-  list(APPEND sources "${CMAKE_CURRENT_SOURCE_DIR}/src/getopt.c")
+  target_sources(ddsrt
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/getopt.c
+    PUBLIC  ${CMAKE_CURRENT_BINARY_DIR}/include/getopt.h)
 endif()
 
-set(include_path "${CMAKE_CURRENT_SOURCE_DIR}/include")
-set(source_path "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_sources(ddsrt
+  PRIVATE src/bswap.c
+          src/io.c
+          src/log.c
+          src/retcode.c
+          src/strtod.c
+          src/strtol.c
+          src/mh3.c
+          src/avl.c
+          src/environ.c
+          src/expand_vars.c
+          src/fibheap.c
+          src/hopscotch.c
+          src/xmlparser.c
+          src/circlist.c
+          src/thread_pool.c
+  PUBLIC  include/dds/ddsrt/arch.h
+          include/dds/ddsrt/atomics.h
+          include/dds/ddsrt/atomics/arm.h
+          include/dds/ddsrt/atomics/gcc.h
+          include/dds/ddsrt/atomics/msvc.h
+          include/dds/ddsrt/atomics/sun.h
+          include/dds/ddsrt/attributes.h
+          include/dds/ddsrt/avl.h
+          include/dds/ddsrt/bswap.h
+          include/dds/ddsrt/cdtors.h
+          include/dds/ddsrt/circlist.h
+          include/dds/ddsrt/countargs.h
+          include/dds/ddsrt/dynlib.h
+          include/dds/ddsrt/endian.h
+          include/dds/ddsrt/environ.h
+          include/dds/ddsrt/fibheap.h
+          include/dds/ddsrt/filesystem.h
+          include/dds/ddsrt/filesystem/posix.h
+          include/dds/ddsrt/filesystem/windows.h
+          include/dds/ddsrt/heap.h
+          include/dds/ddsrt/hopscotch.h
+          include/dds/ddsrt/ifaddrs.h
+          include/dds/ddsrt/io.h
+          include/dds/ddsrt/log.h
+          include/dds/ddsrt/md5.h
+          include/dds/ddsrt/mh3.h
+          include/dds/ddsrt/misc.h
+          include/dds/ddsrt/netstat.h
+          include/dds/ddsrt/process.h
+          include/dds/ddsrt/random.h
+          include/dds/ddsrt/retcode.h
+          include/dds/ddsrt/rusage.h
+          include/dds/ddsrt/sockets.h
+          include/dds/ddsrt/sockets/posix.h
+          include/dds/ddsrt/sockets/windows.h
+          include/dds/ddsrt/static_assert.h
+          include/dds/ddsrt/string.h
+          include/dds/ddsrt/strtod.h
+          include/dds/ddsrt/strtol.h
+          include/dds/ddsrt/sync.h
+          include/dds/ddsrt/sync/freertos.h
+          include/dds/ddsrt/sync/posix.h
+          include/dds/ddsrt/sync/solaris2.6.h
+          include/dds/ddsrt/sync/windows.h
+          include/dds/ddsrt/threads.h
+          include/dds/ddsrt/threads/freertos.h
+          include/dds/ddsrt/threads/posix.h
+          include/dds/ddsrt/threads/windows.h
+          include/dds/ddsrt/time.h
+          include/dds/ddsrt/timeconv.h
+          include/dds/ddsrt/time/freertos.h
+          include/dds/ddsrt/types.h
+          include/dds/ddsrt/types/posix.h
+          include/dds/ddsrt/types/vxworks.h
+          include/dds/ddsrt/types/windows.h)
 
-list(APPEND headers
-  "${include_path}/dds/ddsrt/avl.h"
-  "${include_path}/dds/ddsrt/fibheap.h"
-  "${include_path}/dds/ddsrt/hopscotch.h"
-  "${include_path}/dds/ddsrt/thread_pool.h"
-  "${include_path}/dds/ddsrt/log.h"
-  "${include_path}/dds/ddsrt/retcode.h"
-  "${include_path}/dds/ddsrt/attributes.h"
-  "${include_path}/dds/ddsrt/endian.h"
-  "${include_path}/dds/ddsrt/arch.h"
-  "${include_path}/dds/ddsrt/misc.h"
-  "${include_path}/dds/ddsrt/mh3.h"
-  "${include_path}/dds/ddsrt/io.h"
-  "${include_path}/dds/ddsrt/process.h"
-  "${include_path}/dds/ddsrt/strtod.h"
-  "${include_path}/dds/ddsrt/strtol.h"
-  "${include_path}/dds/ddsrt/types.h"
-  "${include_path}/dds/ddsrt/countargs.h"
-  "${include_path}/dds/ddsrt/static_assert.h"
-  "${include_path}/dds/ddsrt/circlist.h")
-
-list(APPEND sources
-  "${source_path}/bswap.c"
-  "${source_path}/io.c"
-  "${source_path}/log.c"
-  "${source_path}/retcode.c"
-  "${source_path}/strtod.c"
-  "${source_path}/strtol.c"
-  "${source_path}/mh3.c"
-  "${source_path}/avl.c"
-  "${source_path}/environ.c"
-  "${source_path}/expand_vars.c"
-  "${source_path}/fibheap.c"
-  "${source_path}/hopscotch.c"
-  "${source_path}/thread_pool.c"
-  "${source_path}/xmlparser.c"
-  "${source_path}/circlist.c")
+target_include_directories(ddsrt
+  PUBLIC include
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+         $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/src/core/include>)
 
 # Not every target offers the same set of features. For embedded targets the
 # set of features may even be different between builds. e.g. a FreeRTOS build
@@ -154,14 +187,7 @@ list(APPEND sources
 # operating systems, etc input from the build system is required.
 foreach(feature atomics cdtors environ heap ifaddrs random rusage
         sockets string sync threads time md5 process netstat dynlib filesystem)
-  if(EXISTS "${include_path}/dds/ddsrt/${feature}.h")
-    list(APPEND headers "${include_path}/dds/ddsrt/${feature}.h")
-    file(GLOB_RECURSE
-           files
-         CONFIGURE_DEPENDS
-           "${include_path}/dds/ddsrt/${feature}/*.h")
-    list(APPEND headers ${files})
-
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/include/dds/ddsrt/${feature}.h)
     # Do not add any sources if a feature is not offered by the target. The
     # headers will define any macros needed by the source code by combining
     # build system exports and pre-defined macros. To determine if a certain
@@ -174,63 +200,52 @@ foreach(feature atomics cdtors environ heap ifaddrs random rusage
     # error that is picked up by CMake. By default, if a file named after the
     # feature does not exist in cmake, the feature is expected to be
     # implemented for all targets.
-    string(TOUPPER "${feature}" feature_uc)
-    set(HAVE_${feature_uc} TRUE)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/${feature}.c")
+
+    string(TOUPPER ${feature} feature_uc)
+    target_compile_definitions(ddsrt PUBLIC HAVE_${feature_uc})
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${feature}.c)
+      message("check_runtime_feature ${feature}")
       check_runtime_feature("cmake/${feature}.c")
     endif()
 
-    if(HAVE_${feature_uc})
-      # Code that is more-or-less the same for all targets can placed in
-      # src/<feature>.c. An example would be ddsrt_freeifaddrs.
-      if(EXISTS "${source_path}/${feature}.c")
-        list(APPEND sources "${source_path}/${feature}.c")
-      endif()
-      set(system_exists FALSE)
-
-      # Headers that must remain private but are required by other runtime
-      # source files must be located in src/<feature>/dds/ddsrt.
-      if(IS_DIRECTORY "${source_path}/${feature}/include")
-        file(GLOB_RECURSE
-               files
-             CONFIGURE_DEPENDS
-               "${source_path}/${feature}/include/*.h")
-        list(APPEND headers ${files})
-        target_include_directories(
-          ddsrt INTERFACE
-            "$<BUILD_INTERFACE:${source_path}/${feature}/include/>")
-      endif()
-
-      # Allow custom implementations for a feature. e.g. lwip as opposed to
-      # windows or posix.
-      set(_system_name "${system_name}")
-      if(NOT HAVE_${feature_uc} MATCHES "[tT][rR][uU][eE]")
-        set(_system_name "${HAVE_${feature_uc}}")
-      endif()
-
-      foreach(system ${_system_name} posix)
-        if(IS_DIRECTORY "${source_path}/${feature}/${system}")
-          file(GLOB_RECURSE
-                 files
-               CONFIGURE_DEPENDS
-                 "${source_path}/${feature}/${system}/*.c")
-          list(APPEND sources ${files})
-          set(system_exists TRUE)
-        endif()
-        # Break as soon a system-specific headers or sources are found.
-        if(system_exists)
-          break()
-        endif()
-      endforeach()
-    else()
-      message(STATUS "Feature ${feature} disabled")
+    # Code that is more-or-less the same for all targets can placed in
+    # src/<feature>.c. An example would be ddsrt_freeifaddrs.
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/${feature}.c)
+      target_sources(ddsrt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/${feature}.c)
     endif()
+
+    # Allow custom implementations for a feature. e.g. lwip as opposed to
+    # windows or posix.
+    set(_system_name ${system_name})
+    if(NOT HAVE_${feature_uc} MATCHES "[tT][rR][uU][eE]")
+      set(_system_name ${HAVE_${feature_uc}})
+    endif()
+
+    # Headers that must remain private but are required by other runtime
+    # source files must be located in src/<feature>/dds/ddsrt.
+    if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/${feature}/include)
+      file(GLOB_RECURSE
+           files
+           CONFIGURE_DEPENDS
+           ${CMAKE_CURRENT_SOURCE_DIR}/src/${feature}/include/*.h)
+      target_sources(ddsrt PRIVATE ${files})
+      target_include_directories(ddsrt PUBLIC src/${feature}/include)
+    endif()
+
+    foreach(system ${_system_name} posix)
+      if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/${feature}/${system})
+        file(GLOB_RECURSE
+             files
+             CONFIGURE_DEPENDS
+             ${CMAKE_CURRENT_SOURCE_DIR}/src/${feature}/${system}/*.c)
+        target_sources(ddsrt PRIVATE ${files})
+        break()
+      endif()
+    endforeach()
   else()
     message(FATAL_ERROR "Feature ${feature} does not exist")
   endif()
 endforeach()
-
-target_sources(ddsrt INTERFACE ${sources} ${headers})
 
 set(HAVE_MULTI_PROCESS ${HAVE_MULTI_PROCESS} PARENT_SCOPE)
 
@@ -271,6 +286,8 @@ install(
   DIRECTORY
       "include/"
       ${CMAKE_CURRENT_BINARY_DIR}/include/
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+  TYPE INCLUDE
   COMPONENT dev
   FILES_MATCHING PATTERN "*.h")
+
+install(TARGETS ddsrt TYPE LIBRARY)

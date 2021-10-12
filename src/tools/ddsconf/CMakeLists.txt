@@ -9,9 +9,49 @@
 #
 # SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #
-add_executable(ddsconf ddsconf.c rnc.c md.c xsd.c)
-target_link_libraries(ddsconf PRIVATE ddsc)
-target_include_directories(ddsconf
-  PRIVATE
+
+if (BUILD_DDSCONF)
+  include(GenerateDummyExportHeader)
+
+  add_executable(ddsconf
+    ddsconf.c rnc.c md.c xsd.c
+    ${CMAKE_CURRENT_LIST_DIR}/../../core/ddsi/src/q_config.c
+    )
+
+  target_link_libraries(ddsconf PRIVATE ddsc security_core)
+
+  # Windows wants its pound of flesh ...
+  generate_dummy_export_header(
+    ddsconf
+    BASE_NAME dds
+    EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/include/dds/export.h")
+
+  target_include_directories(ddsconf
+    PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}/include"
     $<BUILD_INTERFACE:$<TARGET_PROPERTY:ddsc,INCLUDE_DIRECTORIES>>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+
+  add_executable(${PROJECT_NAME}::ddsconf ALIAS ddsconf)
+
+  install(
+    TARGETS ddsconf
+    EXPORT "${CMAKE_PROJECT_NAME}"
+    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    COMPONENT dev)
+
+  if (CMAKE_CROSSCOMPILING)
+    find_program(_executable ddsconf REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+
+    # REQUIRED is not working until cmake 3.18 so it might still not exist
+    if (NOT _executable)
+      message(FATAL_ERROR "Could not find a native ddsconf executable, please make sure it is available on PATH")
+    endif()
+
+    add_executable(ddsconf-native IMPORTED GLOBAL)
+    set_property(TARGET ddsconf-native PROPERTY IMPORTED_LOCATION "${_executable}")
+    message(STATUS "Using imported native ddsconf ${_executable}")
+  else()
+    add_executable(ddsconf-native ALIAS ddsconf)
+  endif()
+endif()
